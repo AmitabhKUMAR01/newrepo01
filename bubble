@@ -1,0 +1,243 @@
+import { Button } from '@kit/ui/button'
+import { Editor, Extension } from '@tiptap/core'
+import { deleteSelection } from '@tiptap/pm/commands'
+import { ActionButton } from './_components/action-button'
+import { FlipHorizontal, FlipVertical } from 'lucide-react'
+
+/**
+ * Represents the props for the ButtonView component.
+ */
+export interface ButtonViewReturnComponentProps {
+  /** Method triggered when action is performed */
+  action?: (value?: any) => void
+  /** Whether it is in the active state */
+  isActive?: () => boolean
+  /** Button icon */
+  icon?: any
+  /** Text displayed on hover */
+  tooltip?: string
+  [x: string]: any
+}
+
+/**
+ * Represents the slots for the ButtonView component.
+ */
+export interface ButtonViewReturnComponentSlots {
+  /** Dialog slot */
+  dialog: () => any
+  [x: string]: () => any
+}
+
+/**
+ * Represents the return value for the ButtonView component.
+ */
+export interface ButtonViewReturn {
+  /** Component */
+  component: unknown
+  /** Component props */
+  componentProps: ButtonViewReturnComponentProps
+  /** Component slots */
+  componentSlots?: ButtonViewReturnComponentSlots
+}
+
+/**
+ * Represents the parameters for the ButtonView function.
+ */
+export interface ButtonViewParams<T = any> {
+  /** Editor object */
+  editor: Editor
+  /** Extension object */
+  extension: Extension<T>
+  /** Translation function */
+  t: (path: string) => string
+}
+
+/** Represents the size types for bubble images or videos */
+type BubbleImageOrVideoSizeType = 'size-small' | 'size-medium' | 'size-large'
+type ImageAlignments = 'left' | 'center' | 'right'
+
+/** Represents the various types for bubble images */
+type BubbleImageType =
+  | `image-${BubbleImageOrVideoSizeType}`
+  | `video-${BubbleImageOrVideoSizeType}`
+  | 'image'
+  | 'image-aspect-ratio'
+  | 'remove'
+
+/** Represents the overall types for bubbles */
+type BubbleAllType =
+  | BubbleImageType
+  | 'divider'
+  | (string & {})
+
+/** Represents the key types for node types */
+export type NodeTypeKey = 'image' | 'text' | 'video'
+
+/** Represents the menu of bubble types for each node type */
+export type BubbleTypeMenu = Partial<Record<NodeTypeKey, BubbleMenuItem[]>>
+
+/** Represents the menu of overall bubble types for each node type */
+export type NodeTypeMenu = Partial<Record<NodeTypeKey, BubbleAllType[]>>
+
+/**
+ * Represents the structure of a bubble menu item.
+ */
+export interface BubbleMenuItem extends ButtonViewReturn {
+  /** The type of the bubble item */
+  type: BubbleAllType
+}
+
+/** Options for setting image size in the bubble menu */
+export enum IMAGE_SIZE {
+  'size-small' = 200,
+  'size-medium' = 500,
+  'size-large' = '100%',
+}
+
+/**
+ * Represents a function to generate a bubble menu
+ */
+interface BubbleView<T = any> {
+  /**
+   * Generates a bubble menu based on the provided options.
+   * @param {ButtonViewParams<T>} options - The options for generating the bubble menu.
+   * @returns {BubbleTypeMenu} The generated bubble menu.
+   */
+  (options: ButtonViewParams<T>): BubbleTypeMenu
+}
+
+/**
+ * Represents the options for configuring bubbles.
+ * @interface BubbleOptions
+ * @template T
+ */
+export interface BubbleOptions<T> {
+  /** The menu of bubble types for each node type. */
+  list: NodeTypeMenu
+  /** The default list of bubble types. */
+  defaultBubbleList: any
+  /** The function to generate a bubble menu. */
+  button: BubbleView<T>
+}
+
+function imageSizeMenus(editor: Editor): BubbleMenuItem[] {
+  const types: BubbleImageOrVideoSizeType[] = ['size-small', 'size-medium', 'size-large']
+  const icons: NonNullable<ButtonViewReturn['componentProps']['icon']>[] = [
+    'SizeS',
+    'SizeM',
+    'SizeL',
+  ]
+
+  return types.map((size, i) => ({
+    type: `image-${size}`,
+    component: ActionButton,
+    componentProps: {
+      tooltip: `Image ${size}`,
+      icon: icons[i],
+      action: () => editor.commands.updateImage({ width: IMAGE_SIZE[size] }),
+      isActive: () => editor.isActive('image', { width: IMAGE_SIZE[size] }),
+    },
+  }))
+}
+
+
+function imageAlignMenus(editor: Editor): BubbleMenuItem[] {
+  const types: ImageAlignments[] = ['left', 'center', 'right']
+  const iconMap: any = {
+    left: 'AlignLeft',
+    center: 'AlignCenter',
+    right: 'AlignRight',
+  }
+  return types.map(k => ({
+    type: `image-${k}`,
+    component: ActionButton,
+    componentProps: {
+      tooltip: `Image ${k}`,
+      icon: iconMap[k],
+      action: () => editor.commands?.setAlignImage?.(k),
+      isActive: () => editor.isActive({ align: k }) || false,
+      disabled: false,
+    },
+  }))
+}
+
+export function getBubbleImage(editor: Editor): BubbleMenuItem[] {
+  return [
+    {
+      type: 'flipX',
+      component: ActionButton,
+      componentProps: {
+        editor,
+        tooltip: "Flip X",
+        icon: 'FlipHorizontal',
+        action: () => {
+          const image = editor.getAttributes('image')
+          const { flipX } = image as any
+          editor
+            .chain()
+            .focus(undefined, { scrollIntoView: false })
+            .updateImage({
+              flipX: !flipX,
+            })
+            .run()
+        },
+      },
+    },
+    {
+      type: 'flipY',
+      component: ActionButton,
+      componentProps: {
+        editor,
+        tooltip: "Flip Y",
+        icon: 'FlipVertical',
+        action: () => {
+          const image = editor.getAttributes('image')
+          const { flipY } = image as any
+          editor
+            .chain()
+            .focus(undefined, { scrollIntoView: false })
+            .updateImage({
+              flipY: !flipY,
+            })
+            .run()
+        },
+      },
+    },
+    ...imageSizeMenus(editor),
+    ...imageAlignMenus(editor),
+    {
+      type: 'toggleBorder',
+      component: ActionButton,
+      componentProps: {
+        editor,
+        tooltip: "Toggle Border",
+        icon: 'BorderStyle',
+        action: () => {
+          const image = editor.getAttributes('image')
+          const { border } = image as any
+          const newBorder = border === 'none' ? '2px solid red' : 'none'
+          editor
+            .chain()
+            .focus(undefined, { scrollIntoView: false })
+            .updateImage({
+              border: newBorder,
+            })
+            .run()
+        },
+      },
+    },
+    {
+      type: 'remove',
+      component: ActionButton,
+      componentProps: {
+        editor,
+        tooltip: "Delete",
+        icon: 'Trash2',
+        action: () => {
+          const { state, dispatch } = editor.view
+          deleteSelection(state, dispatch)
+        },
+      },
+    },
+  ]
+}
