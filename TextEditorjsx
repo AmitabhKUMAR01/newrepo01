@@ -1,0 +1,270 @@
+"use client";
+
+import "./text-editor.css";
+import { ClientSideSuspense } from "@liveblocks/react/suspense";
+import {
+  FloatingComposer,
+  useLiveblocksExtension,
+} from "@liveblocks/react-tiptap";
+import Highlight from "@tiptap/extension-highlight";
+import Underline from "@tiptap/extension-underline";
+import Link from "@tiptap/extension-link";
+import Placeholder from "@tiptap/extension-placeholder";
+import TaskList from "@tiptap/extension-task-list";
+import { TextAlign } from "@tiptap/extension-text-align";
+import { Typography } from "@tiptap/extension-typography";
+import { Color } from "@tiptap/extension-color";
+import TextStyle from "@tiptap/extension-text-style";
+import FontFamily from "@tiptap/extension-font-family";
+import Youtube from "@tiptap/extension-youtube";
+import { EditorContent, useEditor } from "@tiptap/react";
+import TableOfContents from "@tiptap-pro/extension-table-of-contents";
+import CharacterCount from '@tiptap/extension-character-count'
+import StarterKit from "@tiptap/starter-kit";
+import { EditorView } from "prosemirror-view";
+import styles from "./TextEditor.module.css";
+import { LoadingOverlay } from "@kit/ui/loading-overlay";
+import { CustomTaskItem } from "./Plugins/CustomTaskItem/CustomTaskItem";
+import Toolbar from "../Toolbar/Toolbar";
+import { DocumentHeader } from "~/home/[account]/_components/Documents/DocumentHeader";
+import { DocumentLayout } from "../../_layouts/Document";
+import { InitialDocumentProvider } from "~/home/[account]/_lib/hooks";
+import SidePanelContent from "../SidePanel/side-panel";
+import { Document } from "~/_types";
+import FontSize from "./Plugins/FontSize/FontSize";
+import { useRef, useState } from "react";
+import { TableColumnMenu, TableRowMenu } from "./Plugins/Table/Menus";
+import { SlashCommand } from "./Plugins/SlashCommand";
+import { AIHighlight } from "./Plugins/AIHighlight/ai-highlight";
+import { DatePickerExtension } from "./Plugins/DatePicker/DatePickerExtension";
+import { DropdownExtension } from "./Plugins/Dropdown/DropdownExtension";
+import { RelatedDocumentExtension } from "./Plugins/RelatedDocument/RelatedDocumentExtension";
+import FindAndReplace from "./Plugins/FindReplace/FindAndReplace";
+import { TableRow } from "@tiptap/extension-table-row"
+import { TableHeader } from "@tiptap/extension-table-header"
+import { TableContextMenuExtension } from "./Plugins/Table/TableContextMenuExtension";
+import { CustomTableCell } from "./Plugins/Table/CustomTableCell";
+import { FloatingContextMenu } from "./FloatingContextMenu/floating-context-menu";
+import { RelatedDocsModal } from "./Plugins/RelatedDocument/related-docs-modal";
+import { Figma } from "./Plugins/Figma";
+import { useStorage, useMutation, useUser, useSelf } from "@liveblocks/react";
+import { Reviewer } from "../SidePanel/Reviewers";
+import Image from "./Plugins/ResizableImage/image";
+import { BubbleMenuImage } from "./Menus/_components/bubble-menu-media";
+import { Table } from "./Plugins/Table";
+
+export function TextEditor({ initialDocument }: { initialDocument: Document }) {
+  return (
+    <ClientSideSuspense fallback={<LoadingOverlay />}>
+      <Editor initialDocument={initialDocument} />
+    </ClientSideSuspense>
+  );
+}
+
+// Collaborative text editor with simple rich text and live cursors
+export function Editor({ initialDocument }: { initialDocument: Document }) {
+  const liveblocks = useLiveblocksExtension();
+  const self = useSelf();
+  const reviewers = useStorage((root) => root.reviewers || []);
+  const updateLastEngaged = useMutation(({ storage }) => {
+    const reviewers = storage.get("reviewers") || [];
+    if (self.id && reviewers.some((reviewer: Reviewer) => reviewer.id === self.id)) {
+      const updatedReviewers = reviewers.map((reviewer: Reviewer) =>
+        reviewer.id === self.id
+          ? {
+            ...reviewer,
+            lastEngagement: new Date().toISOString()
+          }
+          : reviewer
+      );
+      storage.set("reviewers", updatedReviewers);
+    }
+  }, [reviewers]);
+  const [anchors, setAnchors] = useState([])
+  const menuContainerRef = useRef(null)
+  const [showRelatedDocsModal, setShowRelatedDocsModal] = useState(false)
+  const aiHighlight = AIHighlight;
+
+  // Set up editor with plugins, and place user info into Yjs awareness and cursors
+  const editor = useEditor({
+    editorProps: {
+      attributes: {
+        // Add styles to editor element
+        class: styles.editor,
+        // Add this to help debug attribute issues
+        "data-editor": "tiptap",
+      },
+      handleDOMEvents: {
+        keydown: () => {
+          updateLastEngaged();
+          return false;
+        },
+        mousedown: () => {
+          updateLastEngaged();
+          return false;
+        },
+      },
+    },
+    extensions: [
+      liveblocks,
+      StarterKit.configure({
+        blockquote: {
+          HTMLAttributes: {
+            class: "tiptap-blockquote",
+          },
+        },
+        code: {
+          HTMLAttributes: {
+            class: "tiptap-code",
+          },
+        },
+        codeBlock: {
+          languageClassPrefix: "language-",
+          HTMLAttributes: {
+            class: "tiptap-code-block",
+            spellcheck: "false",
+          },
+        },
+        heading: {
+          levels: [1, 2, 3],
+          HTMLAttributes: {
+            class: "tiptap-heading",
+          },
+        },
+        // The Collaboration extension comes with its own history handling
+        history: false,
+        horizontalRule: {
+          HTMLAttributes: {
+            class: "tiptap-hr",
+          },
+        },
+        listItem: {
+          HTMLAttributes: {
+            class: "tiptap-list-item",
+          },
+        },
+        orderedList: {
+          HTMLAttributes: {
+            class: "tiptap-ordered-list",
+          },
+        },
+        paragraph: {
+          HTMLAttributes: {
+            class: "tiptap-paragraph",
+          },
+        },
+      }),
+      SlashCommand.configure({
+        onShowModal: () => setShowRelatedDocsModal(true)
+      }),
+      Underline,
+      Color,
+      TextStyle,
+      FontFamily,
+      Highlight.configure({ 
+        multicolor: true,
+        HTMLAttributes: {
+          class: 'highlight'
+        }
+      }),
+      aiHighlight,
+      TableContextMenuExtension,
+      TableOfContents.configure({
+        anchorTypes: ['heading'],
+        onUpdate: (anchors) => {
+          setAnchors(anchors)
+        },
+      }),
+      FontSize,
+      Image.configure({
+        upload: (files: File) => {
+          return new Promise((resolve) => {
+            setTimeout(() => {
+              resolve(URL.createObjectURL(files))
+            }, 500)
+          })
+        },
+      }),
+      Link.configure({
+        HTMLAttributes: {
+          class: "tiptap-link",
+        },
+      }),
+      Placeholder.configure({
+        placeholder: "Start writing…",
+        emptyEditorClass: "tiptap-empty",
+      }),
+      CustomTaskItem,
+      TaskList.configure({
+        HTMLAttributes: {
+          class: "tiptap-task-list",
+        },
+      }),
+      TextAlign.configure({
+        types: ["heading", "paragraph"],
+      }),
+      Typography,
+      Youtube.configure({
+        modestBranding: true,
+        HTMLAttributes: {
+          class: "tiptap-youtube",
+        },
+      }),
+      Table,
+      CustomTableCell,
+      TableHeader,
+      TableRow,
+      DropdownExtension,
+      Figma,
+      DatePickerExtension,
+      RelatedDocumentExtension,
+      FindAndReplace.configure(),
+      CharacterCount.configure({
+        textCounter: (text) => [...new Intl.Segmenter().segment(text)].length,
+        wordCounter: (text) => text.split(/\s+/).filter((word) => word !== '').length,
+      }),
+    ],
+  });
+
+  return (
+    <InitialDocumentProvider initialDocument={initialDocument}>
+      <DocumentLayout
+        header={ editor &&
+          <>
+            <DocumentHeader documentId={initialDocument.id} editor={editor} />
+            <Toolbar editor={editor} />
+          </>
+        }
+        className="h-full overflow-hidden"
+      >
+        <div className="flex flex-row h-full w-full overflow-auto" ref={menuContainerRef}>
+          { editor &&
+            <>
+              <div className={styles.editorZoomWrapper}>
+                <div className={styles.editorZoomContainer}>
+                  <EditorContent editor={editor} className={styles.editorContainer} />
+                </div>
+                <TableRowMenu editor={editor} appendTo={menuContainerRef} />
+                <TableColumnMenu editor={editor} appendTo={menuContainerRef} />
+                <FloatingComposer editor={editor} />
+                <FloatingContextMenu editor={editor} />
+                <BubbleMenuImage editor={editor} />
+              </div>
+              {showRelatedDocsModal && <RelatedDocsModal editor={editor} isOpen={showRelatedDocsModal} setIsOpen={setShowRelatedDocsModal} />}
+            </>
+          }
+        </div>
+      </DocumentLayout>
+      <SidePanelContent editor={editor} />
+    </InitialDocumentProvider>
+  );
+}
+
+// Prevents a matchesNode error on hot reloading
+EditorView.prototype.updateState = function updateState(state) {
+  // @ts-ignore
+  if (!this.docView) return;
+  // @ts-ignore
+  this.updateStateInner(state, this.state.plugins != state.plugins);
+};
+
